@@ -137,6 +137,18 @@ bool hasNonSampledCallbacks() {
   return manager().hasNonSampledCallbacks();
 }
 
+void runBeforeCallbacks(RecordFunction* rf, const std::string& funcName) {
+  TORCH_INTERNAL_ASSERT(
+      rf != nullptr, "Passed in RecordFunction cannot be null.");
+  if (hasCallbacks()) {
+    auto run_samples = shouldRunSampledCallbacks();
+    if (run_samples || hasNonSampledCallbacks()) {
+      rf->setRunSampled(run_samples);
+      rf->before(funcName);
+    }
+  }
+}
+
 void RecordFunction::before(const char* name, int64_t sequence_nr) {
   if (!hasCallbacks()) {
     return;
@@ -197,7 +209,14 @@ void RecordFunction::end() {
       }
     }
 
-    AT_ASSERT(thread_local_func_ == this, name_, ": must be top of stack");
+    // In the case that RecordFunction::end is called from a different thread,
+    // thread_local_func will not be this, so assert that we are overriding the
+    // thread id and thread_local_func is null.
+    TORCH_INTERNAL_ASSERT(
+        (thread_local_func_ == this) ||
+            (thread_local_func_ == nullptr && overrideThreadId_),
+        name_,
+        ": must be top of stack");
     thread_local_func_ = parent_;
     initialized_ = false;
   }
